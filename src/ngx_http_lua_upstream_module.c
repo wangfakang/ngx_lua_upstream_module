@@ -8,7 +8,6 @@
 #define DDEBUG 0
 #endif
 #include "ddebug.h"
-//#include "ngx_http_upstream.h"
 
 
 #include <ngx_core.h>
@@ -21,7 +20,6 @@
 ngx_module_t ngx_http_lua_upstream_module;
 
 extern ngx_module_t ngx_http_upstream_consistent_hash_module;
-//extern ngx_http_upstream_chash_srv_conf_t * ngx_http_upstream_chash_get(ngx_http_upstream_srv_conf_t *us);
 
 
 static ngx_int_t ngx_http_lua_upstream_init(ngx_conf_t *cf);
@@ -66,6 +64,7 @@ typedef struct {
     ngx_queue_t                             queue;
 } ngx_http_upstream_chash_down_server_t;
 
+
 typedef struct {
     u_char                                  down;
     uint32_t                                hash;
@@ -73,6 +72,7 @@ typedef struct {
     ngx_uint_t                              rnindex;
     ngx_http_upstream_rr_peer_t            *peer;
 } ngx_http_upstream_chash_server_t;
+
 
 typedef struct {
     ngx_uint_t                              number;
@@ -236,7 +236,7 @@ ngx_http_lua_upstream_add_server(lua_State * L)
     }
 
     r = ngx_http_lua_get_request(L);
-    if (r == NULL) {
+    if (NULL == r) {
         lua_pushnil(L);
         lua_pushliteral(L, "get request error \n");
         return 2;
@@ -255,7 +255,7 @@ ngx_http_lua_upstream_add_server(lua_State * L)
     ngx_log_error(NGX_LOG_ALERT, r->connection->log, 0, "%s %s params: %s,%s,%d,%d,%d\n", __FILE__,__FUNCTION__, host.data, p, weight, max_fails, fail_timeout);
 #endif
     uscf = ngx_http_lua_upstream_find_upstream(L, &host);
-    if (uscf == NULL) {
+    if (NULL == uscf) {
         lua_pushnil(L);
         lua_pushliteral(L, "upstream not found\n");
         return 2;
@@ -396,7 +396,7 @@ ngx_http_lua_upstream_add_peer(lua_State * L)
     }
 
     r = ngx_http_lua_get_request(L);
-    if (r == NULL) {
+    if (NULL == r) {
         lua_pushnil(L);
         lua_pushliteral(L, "get request error \n");
         return 2;
@@ -538,7 +538,7 @@ ngx_http_lua_upstream_chash_add_peer(lua_State * L)
     }
 
     r = ngx_http_lua_get_request(L);
-    if (r == NULL) {
+    if ( NULL == r ) {
         lua_pushnil(L);
         lua_pushliteral(L, "get request error \n");
         return 2;
@@ -759,7 +759,7 @@ ngx_http_lua_upstream_get_servers(lua_State * L)
     host.data = (u_char *) luaL_checklstring(L, 1, &host.len);
 
     us = ngx_http_lua_upstream_find_upstream(L, &host);
-    if (us == NULL) {
+    if (NULL == us) {
         lua_pushnil(L);
         lua_pushliteral(L, "upstream not found");
         return 2;
@@ -861,7 +861,7 @@ ngx_http_lua_upstream_get_primary_peers(lua_State * L)
 
     peers = us->peer.data;
 
-    if (peers == NULL) {
+    if (NULL == peers) {
         lua_pushnil(L);
         lua_pushliteral(L, "no peer data");
         return 2;
