@@ -677,8 +677,6 @@ ngx_http_lua_upstream_chash_add_peer(lua_State * L)
    }
 
    ucscf->tree->num = ucscf->number;   
-   ucscf->tree->extreme = NGX_MAX_UINT32_VALUE;
-   ucscf->tree->segments[0].key = ucscf->tree->extreme;
    ucscf->tree->build(ucscf->tree, 1, 1, ucscf->number);
    ngx_queue_init(&ucscf->down_servers);
 
