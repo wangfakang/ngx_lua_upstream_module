@@ -699,11 +699,21 @@ ngx_http_lua_upstream_add_peer(lua_State * L)
 
    old_size = ((number + 1) << 2 ) * sizeof(ngx_segment_node_t);
    new_size = ((ucscf->number +1) << 2 ) * sizeof(ngx_segment_node_t);
+   
+   if (NULL == ucscf->tree) {
+        ucscf->tree = ngx_pcalloc(ngx_cycle->pool, sizeof(ngx_segment_tree_t));
+        if (NULL == ucscf->tree) {
+            lua_pushnil(L);
+            lua_pushliteral(L, "ucscf tree realloc fail\n");
+            return 2;
+        }
+   }
+
 
    ucscf->tree->segments = ngx_prealloc(ngx_cycle->pool, ucscf->tree->segments, old_size, new_size );
    if (NULL == ucscf->tree->segments ) {
         lua_pushnil(L);
-        lua_pushliteral(L, "ucscf tree realloc fail\n");
+        lua_pushliteral(L, "ucscf tree segments realloc fail\n");
         return 2;
    }
 
