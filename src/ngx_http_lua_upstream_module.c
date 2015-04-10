@@ -41,7 +41,7 @@ static int ngx_http_lua_upstream_say_hello(lua_State* L);
 static int
 ngx_http_lua_upstream_add_server(lua_State * L);
 static int
-ngx_http_lua_upstream_add_peer(lua_State * L);
+ngx_http_lua_upstream_simple_add_peer(lua_State * L);
 static ngx_http_upstream_server_t*
 ngx_http_lua_upstream_compare_server(ngx_http_upstream_srv_conf_t * us , ngx_url_t u);
 static ngx_http_upstream_srv_conf_t *
@@ -50,12 +50,12 @@ static int
 ngx_http_lua_upstream_exist_peer(ngx_http_upstream_rr_peers_t * peers , ngx_url_t u);
 
 static int
-ngx_http_lua_upstream_chash_add_peer(lua_State * L);
+ngx_http_lua_upstream_add_peer(lua_State * L);
 
 
+# if (NGX_HTTP_UPSTREAM_CONSISTENT_HASH)
 static ngx_int_t
 ngx_http_upstream_chash_cmp(const void *one, const void *two);
-
 
 
 typedef struct {
@@ -96,7 +96,7 @@ typedef struct {
     ngx_http_upstream_chash_srv_conf_t     *ucscf;
 } ngx_http_upstream_chash_peer_data_t;
 
-
+#endif
 
 
 
@@ -170,8 +170,6 @@ ngx_http_lua_upstream_create_module(lua_State * L)
     lua_pushcfunction(L, ngx_http_lua_upstream_add_peer);
     lua_setfield(L, -2, "add_peer");
 
-    lua_pushcfunction(L, ngx_http_lua_upstream_chash_add_peer);
-    lua_setfield(L, -2, "chash_add_peer");
 
     //    lua_pushcfunction(L, ngx_http_lua_upstream_update_peer_addr);
     //    lua_setfield(L, -2, "update_peer_addr");
@@ -188,6 +186,13 @@ ngx_http_lua_upstream_say_hello(lua_State * L)
 }
 
 
+
+/*
+ * the function is compare server as upstream server 
+ * if exists and return upstream_server_t else return 
+ * NULL
+ * 
+*/
 static ngx_http_upstream_server_t*
 ngx_http_lua_upstream_compare_server(ngx_http_upstream_srv_conf_t * us , ngx_url_t u )
 {
@@ -215,6 +220,12 @@ ngx_http_lua_upstream_compare_server(ngx_http_upstream_srv_conf_t * us , ngx_url
 }
 
 
+
+/*
+ * the function is dynamically add a server to upstream 
+ * server ,but not added it to the back-end peer
+ * 
+*/
 static int
 ngx_http_lua_upstream_add_server(lua_State * L)
 {
@@ -310,7 +321,11 @@ ngx_http_lua_upstream_add_server(lua_State * L)
 }
 
 
-
+/*
+ * the function is check upstream whether there is  
+ * such a u.url.data,if exist return srv_conf_t structure 
+ * else return NULL
+*/
 static ngx_http_upstream_srv_conf_t *
 ngx_http_lua_upstream_check_peers(lua_State * L,ngx_url_t u,ngx_http_upstream_server_t ** srv)
 {
@@ -350,6 +365,11 @@ ngx_http_lua_upstream_check_peers(lua_State * L,ngx_url_t u,ngx_http_upstream_se
 
 
 
+/*
+ * the function is check current peers whether exists 
+ * a peer  such a u.url.data if exists and return 1,
+ * else return 0
+*/
 static int
 ngx_http_lua_upstream_exist_peer(ngx_http_upstream_rr_peers_t * peers , ngx_url_t u)
 {
@@ -371,9 +391,13 @@ ngx_http_lua_upstream_exist_peer(ngx_http_upstream_rr_peers_t * peers , ngx_url_
 
 
 
-
+/*
+ * the function is add a server to back-end peers 
+ * at present only suitable for ip_hash or round_
+ * robin 
+*/
 static int
-ngx_http_lua_upstream_add_peer(lua_State * L)
+ngx_http_lua_upstream_simple_add_peer(lua_State * L)
 {
     ngx_uint_t n;
     ngx_http_upstream_server_t   *us;
@@ -516,10 +540,17 @@ ngx_http_lua_upstream_add_peer(lua_State * L)
 }
 
 
+/*
+ * the function is add a server to back-end peers 
+ * it's suitable for ip_hash or round_robin consistent
+ * _hash,the peer's weight ip port ... depends on
+ * nginx.conf   
+*/
 
 static int
-ngx_http_lua_upstream_chash_add_peer(lua_State * L)
+ngx_http_lua_upstream_add_peer(lua_State * L)
 {
+# if (NGX_HTTP_UPSTREAM_CONSISTENT_HASH)
     ngx_http_upstream_server_t   *us;
     ngx_http_request_t *r;
     ngx_http_upstream_chash_srv_conf_t * ucscf;
@@ -532,10 +563,14 @@ ngx_http_lua_upstream_chash_add_peer(lua_State * L)
     u_char     hash_buf[256];
     ngx_url_t u;
     size_t old_size,new_size;
+#endif
     
-    if ( 1 != ngx_http_lua_upstream_add_peer(L) ) {
+    if ( 1 != ngx_http_lua_upstream_simple_add_peer(L) ) {
            return 2;
     }
+
+
+# if (NGX_HTTP_UPSTREAM_CONSISTENT_HASH)
 
     r = ngx_http_lua_get_request(L);
     if ( NULL == r ) {
@@ -543,7 +578,6 @@ ngx_http_lua_upstream_chash_add_peer(lua_State * L)
         lua_pushliteral(L, "get request error \n");
         return 2;
     }
-    
 
     ngx_memzero(&u, sizeof (ngx_url_t));
     u.url.data = (u_char *) luaL_checklstring(L, 1, &u.url.len);
@@ -587,7 +621,6 @@ ngx_http_lua_upstream_chash_add_peer(lua_State * L)
         return 2;
     }
 
-    
     old_size = (ucscf->number + 1)*sizeof(ngx_http_upstream_chash_server_t);
     new_size = old_size + sizeof(ngx_http_upstream_chash_server_t)*number;   
 
@@ -612,7 +645,6 @@ ngx_http_lua_upstream_chash_add_peer(lua_State * L)
     peer = &peers->peer[n];
     
     sid = (ngx_uint_t) ngx_atoi(peer->id.data, peer->id.len);
-
     if (sid == (ngx_uint_t) NGX_ERROR || sid > 65535) {
 
         #if (NGX_DEBUG)
@@ -625,11 +657,10 @@ ngx_http_lua_upstream_chash_add_peer(lua_State * L)
     }
 
     weight = peer->weight * NGX_CHASH_VIRTUAL_NODE_NUMBER;    
-  
     if (weight >= 1 << 14) {
-        #if (NGX_DEBUG)
+#if (NGX_DEBUG)
         ngx_log_error(NGX_LOG_ALERT, r->connection->log, 0, "weigth[%d] is too large, is must be less than %d\n", weight / NGX_CHASH_VIRTUAL_NODE_NUMBER,(1 << 14) / NGX_CHASH_VIRTUAL_NODE_NUMBER );
-        #endif
+#endif
         weight = 1 << 14;
     }
     
@@ -680,10 +711,15 @@ ngx_http_lua_upstream_chash_add_peer(lua_State * L)
    ucscf->tree->build(ucscf->tree, 1, 1, ucscf->number);
    ngx_queue_init(&ucscf->down_servers);
 
+#endif
+
    return 1;
 
 }
 
+
+
+# if (NGX_HTTP_UPSTREAM_CONSISTENT_HASH)
 
 static ngx_int_t
 ngx_http_upstream_chash_cmp(const void *one, const void *two)
@@ -704,6 +740,7 @@ ngx_http_upstream_chash_cmp(const void *one, const void *two)
     }
 }
 
+#endif
 
 
 
