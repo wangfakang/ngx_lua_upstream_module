@@ -36,7 +36,7 @@ ngx_http_lua_upstream_add_peer(lua_State * L);
 ngx_uint_t 
 ngx_http_lua_upstream_add_check_peer(ngx_http_upstream_srv_conf_t *us , ngx_addr_t *peer_addr);
 
-//Mark below function form ngx_http_upstream_check_module.c and delete static 
+//Mark below function from ngx_http_upstream_check_module.c and delete static 
 
 extern ngx_int_t ngx_http_upstream_check_addr_change_port(ngx_pool_t *pool,ngx_addr_t *dst,
                                                                  ngx_addr_t *src,ngx_uint_t port);
