@@ -14,89 +14,10 @@
 #include <ngx_http.h>
 #include <lauxlib.h>
 #include "ngx_http_lua_api.h"
+#include "ngx_http_lua_upstream_module.h"
 
-#define NGX_CHASH_VIRTUAL_NODE_NUMBER 160
 
 ngx_module_t ngx_http_lua_upstream_module;
-
-extern ngx_module_t ngx_http_upstream_consistent_hash_module;
-
-
-static ngx_int_t ngx_http_lua_upstream_init(ngx_conf_t *cf);
-static int ngx_http_lua_upstream_create_module(lua_State * L);
-static int ngx_http_lua_upstream_get_upstreams(lua_State * L);
-static int ngx_http_lua_upstream_get_servers(lua_State * L);
-static ngx_http_upstream_main_conf_t *
-ngx_http_lua_upstream_get_upstream_main_conf(lua_State *L);
-static int ngx_http_lua_upstream_get_primary_peers(lua_State * L);
-static int ngx_http_lua_upstream_get_backup_peers(lua_State * L);
-static int ngx_http_lua_get_peer(lua_State *L,
-                                 ngx_http_upstream_rr_peer_t *peer, ngx_uint_t id);
-static ngx_http_upstream_srv_conf_t *
-ngx_http_lua_upstream_find_upstream(lua_State *L, ngx_str_t *host);
-static ngx_http_upstream_rr_peer_t *
-ngx_http_lua_upstream_lookup_peer(lua_State *L);
-static int ngx_http_lua_upstream_set_peer_down(lua_State * L);
-static int ngx_http_lua_upstream_say_hello(lua_State* L);
-static int
-ngx_http_lua_upstream_add_server(lua_State * L);
-static int
-ngx_http_lua_upstream_simple_add_peer(lua_State * L);
-static ngx_http_upstream_server_t*
-ngx_http_lua_upstream_compare_server(ngx_http_upstream_srv_conf_t * us , ngx_url_t u);
-static ngx_http_upstream_srv_conf_t *
-ngx_http_lua_upstream_check_peers(lua_State * L,ngx_url_t u,ngx_http_upstream_server_t ** srv);
-static int
-ngx_http_lua_upstream_exist_peer(ngx_http_upstream_rr_peers_t * peers , ngx_url_t u);
-
-static int
-ngx_http_lua_upstream_add_peer(lua_State * L);
-
-
-# if (NGX_HTTP_UPSTREAM_CONSISTENT_HASH)
-static ngx_int_t
-ngx_http_upstream_chash_cmp(const void *one, const void *two);
-
-
-typedef struct {
-    time_t                                  timeout;
-    ngx_int_t                               id;
-    ngx_queue_t                             queue;
-} ngx_http_upstream_chash_down_server_t;
-
-
-typedef struct {
-    u_char                                  down;
-    uint32_t                                hash;
-    ngx_uint_t                              index;
-    ngx_uint_t                              rnindex;
-    ngx_http_upstream_rr_peer_t            *peer;
-} ngx_http_upstream_chash_server_t;
-
-
-typedef struct {
-    ngx_uint_t                              number;
-    ngx_queue_t                             down_servers;
-    ngx_array_t                            *values;
-    ngx_array_t                            *lengths;
-    ngx_segment_tree_t                     *tree;
-    ngx_http_upstream_chash_server_t     ***real_node;
-    ngx_http_upstream_chash_server_t       *servers;
-    ngx_http_upstream_chash_down_server_t  *d_servers;
-} ngx_http_upstream_chash_srv_conf_t;
-
-typedef struct {
-    uint32_t                                hash;
-
-#if (NGX_HTTP_SSL)
-    ngx_ssl_session_t                  *ssl_session;
-#endif
-
-    ngx_http_upstream_chash_server_t       *server;
-    ngx_http_upstream_chash_srv_conf_t     *ucscf;
-} ngx_http_upstream_chash_peer_data_t;
-
-#endif
 
 
 
@@ -390,6 +311,73 @@ ngx_http_lua_upstream_exist_peer(ngx_http_upstream_rr_peers_t * peers , ngx_url_
 }
 
 
+#if (NGX_HTTP_UPSTREAM_CHECK)
+
+/*
+ * the function is add a peer to upstream check
+ * module
+*/
+ngx_uint_t 
+ngx_http_lua_upstream_add_check_peer(ngx_http_upstream_srv_conf_t *us , 
+                                          ngx_addr_t *peer_addr)
+{
+    ngx_http_upstream_check_peer_t *peer;
+    ngx_http_upstream_check_peers_t *peers;
+    ngx_http_upstream_check_srv_conf_t *ucscf;
+    ngx_http_upstream_check_main_conf_t *ucmcf;
+
+    
+   if (us->srv_conf == NULL) {
+        return NGX_ERROR;
+    }
+
+    ucscf = ngx_http_conf_upstream_srv_conf(us, ngx_http_upstream_check_module);
+
+    if(ucscf->check_interval == 0) {
+        return NGX_ERROR;
+    }
+
+    ucmcf = ngx_http_cycle_get_module_main_conf(ngx_cycle,ngx_http_upstream_check_module);
+    peers = ucmcf->peers;
+
+    peer = ngx_array_push(&peers->peers);
+    if (peer == NULL) {
+        return NGX_ERROR;
+    }
+
+    ngx_memzero(peer, sizeof(ngx_http_upstream_check_peer_t));
+    
+    peer->index = peers->peers.nelts - 1;
+    peer->conf = ucscf;
+    peer->upstream_name = &us->host;
+    peer->peer_addr = peer_addr;
+
+    if (ucscf->port) {
+        peer->check_peer_addr = ngx_pcalloc(ngx_cycle->pool, sizeof(ngx_addr_t));
+        if (peer->check_peer_addr == NULL) {
+            return NGX_ERROR;
+        }
+
+        if (ngx_http_upstream_check_addr_change_port(ngx_cycle->pool,
+                peer->check_peer_addr, peer_addr, ucscf->port)
+            != NGX_OK) {
+
+            return NGX_ERROR;
+        }
+
+    } else {
+        peer->check_peer_addr = peer->peer_addr;
+    }
+
+    peers->checksum +=
+        ngx_murmur_hash2(peer_addr->name.data, peer_addr->name.len);
+
+    return peer->index;
+
+}
+
+#endif
+
 
 /*
  * the function is add a server to back-end peers 
@@ -442,6 +430,14 @@ ngx_http_lua_upstream_simple_add_peer(lua_State * L)
     
     peers = uscf->peer.data;
 
+#if (NGX_HTTP_UPSTREAM_CHECH)
+    if (!us->down) {
+        peer.check_index = ngx_http_lua_upstream_check_add_peer(uscf, us->addrs);
+    } else {
+        peer.check_index = (nxg_uint_t) NGX_ERROR;
+    }
+#endif
+
     if ( !us->backup ) {
         if ( 1 == ngx_http_lua_upstream_exist_peer(peers,u) ) {
             lua_pushnil(L);
@@ -476,9 +472,6 @@ ngx_http_lua_upstream_simple_add_peer(lua_State * L)
         peer.down = us->down;
         peer.fails = 0;
 
-#if (NGX_HTTP_UPSTREAM_CHECH)
-        peer.check_index = (nxg_uint_t) NGX_ERROR;
-#endif
 
         peers->peer[peers->number++] = peer;
         peers->total_weight += peer.weight;
