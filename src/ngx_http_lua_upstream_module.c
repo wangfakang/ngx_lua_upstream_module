@@ -430,6 +430,8 @@ ngx_http_lua_upstream_simple_add_peer(lua_State * L)
     
     peers = uscf->peer.data;
 
+    ngx_memzero(&peer, sizeof (ngx_http_upstream_rr_peer_t));
+
 #if (NGX_HTTP_UPSTREAM_CHECH)
     if (!us->down) {
         peer.check_index = ngx_http_lua_upstream_check_add_peer(uscf, us->addrs);
