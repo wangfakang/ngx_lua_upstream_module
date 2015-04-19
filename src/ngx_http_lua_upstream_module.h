@@ -32,6 +32,14 @@ ngx_http_lua_upstream_exist_peer(ngx_http_upstream_rr_peers_t * peers , ngx_url_
 static int
 ngx_http_lua_upstream_add_peer(lua_State * L);
 
+static int
+ngx_http_lua_upstream_remove_server(lua_State * L);
+
+static int
+ngx_http_lua_upstream_simple_remove_peer(lua_State * L);
+static int
+ngx_http_lua_upstream_remove_peer(lua_State * L);
+
 #if (NGX_HTTP_UPSTREAM_CHECK)
 ngx_uint_t 
 ngx_http_lua_upstream_add_check_peer(ngx_http_upstream_srv_conf_t *us , ngx_addr_t *peer_addr);

@@ -91,7 +91,11 @@ ngx_http_lua_upstream_create_module(lua_State * L)
     lua_pushcfunction(L, ngx_http_lua_upstream_add_peer);
     lua_setfield(L, -2, "add_peer");
 
+    lua_pushcfunction(L, ngx_http_lua_upstream_remove_server);
+    lua_setfield(L, -2, "remove_server");
 
+    lua_pushcfunction(L, ngx_http_lua_upstream_remove_peer);
+    lua_setfield(L, -2, "remove_peer");
     //    lua_pushcfunction(L, ngx_http_lua_upstream_update_peer_addr);
     //    lua_setfield(L, -2, "update_peer_addr");
 
@@ -243,6 +247,374 @@ ngx_http_lua_upstream_add_server(lua_State * L)
 
 
 /*
+ * the function is remove a server from ngx_http_upstream_srv_conf_t servers  
+ * 
+*/
+static int
+ngx_http_lua_upstream_remove_server(lua_State * L)
+{
+    ngx_uint_t i,len;
+    ngx_str_t host;
+    ngx_array_t *servers;
+    ngx_http_upstream_server_t   *us,*server;
+    ngx_http_upstream_srv_conf_t *uscf;
+    ngx_http_request_t *r;
+    ngx_url_t u;
+    
+    if (lua_gettop(L) != 2) {
+        // two param is :  "bar","ip:port" 
+        // for lua code , you must pass this one param, is none ,you should 
+        // consider pass default value.
+    	//lua_pushstring(L, "exactly one argument expected\n");
+        lua_pushnil(L);
+        lua_pushliteral(L, "exactly two argument expected\n");
+        return 2;
+    }
+
+    r = ngx_http_lua_get_request(L);
+    if (NULL == r) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "get request error \n");
+        return 2;
+    }
+
+    host.data = (u_char *) luaL_checklstring(L, 1, &host.len);
+
+    ngx_memzero(&u, sizeof (ngx_url_t));
+    u.url.data = (u_char *) luaL_checklstring(L, 2, &u.url.len);
+    u.default_port = 80;
+
+#if (NGX_DEBUG)
+    ngx_log_error(NGX_LOG_ALERT, r->connection->log, 0, "%s %s params: %s\n", __FILE__,__FUNCTION__ , u.url.data );
+#endif
+
+    uscf = ngx_http_lua_upstream_find_upstream(L, &host);
+    if (NULL == uscf) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "upstream not found\n");
+        return 2;
+    }
+    
+    if ( NULL == ngx_http_lua_upstream_compare_server(uscf,u) ) {
+        lua_pushnil(L);
+        lua_pushliteral(L,"not found this server\n");
+        return 2;
+    }    
+
+    server = uscf->servers->elts;
+
+    servers = ngx_array_create(ngx_cycle->pool,uscf->servers->nelts,sizeof(ngx_http_upstream_server_t));    
+    if (NULL == servers) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "servers create fail\n");
+        return 2;
+    }
+    
+    for (i = 0; i<uscf->servers->nelts; i++) {
+        len = ( server[i].host.data == NULL ? 0 : ngx_strlen(server[i].host.data));
+	if ( len == u.url.len
+               && ngx_memcmp( u.url.data ,server[i].host.data , u.url.len) == 0 ) {
+             continue;
+        }
+
+        us = ngx_array_push(servers);
+        ngx_memzero(us,sizeof(ngx_http_upstream_server_t));
+        us->host = server[i].host;
+        us->id = server[i].id;
+        us->addrs = server[i].addrs;
+        us->naddrs = server[i].naddrs;
+        us->weight = server[i].weight;
+        us->max_fails = server[i].max_fails;
+        us->fail_timeout = server[i].fail_timeout;
+   }
+   
+   ngx_array_destroy(uscf->servers);
+   uscf->servers = servers;
+   
+
+    return 1;
+
+}
+
+/*
+ * the function is simple remove a server from back-end peers.  
+ * 
+*/
+static int
+ngx_http_lua_upstream_simple_remove_peer(lua_State * L)
+{
+    ngx_uint_t i,j,len;
+    ngx_str_t host;
+    ngx_http_upstream_rr_peers_t *peers; 
+    ngx_http_upstream_srv_conf_t *uscf;
+    ngx_http_request_t *r;
+    ngx_url_t u;
+    
+    if (lua_gettop(L) != 2) {
+        // two param is :  "bar","ip:port" 
+        // for lua code , you must pass this one param, is none ,you should 
+        // consider pass default value.
+    	//lua_pushstring(L, "exactly one argument expected\n");
+        lua_pushnil(L);
+        lua_pushliteral(L, "exactly two argument expected\n");
+        return 2;
+    }
+
+    r = ngx_http_lua_get_request(L);
+    if (NULL == r) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "get request error \n");
+        return 2;
+    }
+
+    host.data = (u_char *) luaL_checklstring(L, 1, &host.len);
+
+    ngx_memzero(&u, sizeof (ngx_url_t));
+    u.url.data = (u_char *) luaL_checklstring(L, 2, &u.url.len);
+    u.default_port = 80;
+
+#if (NGX_DEBUG)
+    ngx_log_error(NGX_LOG_ALERT, r->connection->log, 0, "%s %s params: %s\n", __FILE__,__FUNCTION__ , u.url.data );
+#endif
+
+    uscf = ngx_http_lua_upstream_find_upstream(L, &host);
+    if (NULL == uscf) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "upstream not found\n");
+        return 2;
+    }
+    
+    peers = uscf->peer.data;    
+
+    if ( 0 == ngx_http_lua_upstream_exist_peer(peers,u) ) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "not found this peer\n");
+        return 2;
+    }
+
+    peers = uscf->peer.data;
+    if (NULL == peers ) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "peers is null\n");
+        return 2;
+    }
+    
+    for (i = 0; i < peers->number; i++) {
+        len = ( peers->peer[i].host.data == NULL ? 0 : ngx_strlen(peers->peer[i].host.data));
+	if ( len == u.url.len
+                    && ngx_memcmp( u.url.data ,peers->peer[i].host.data , u.url.len) == 0 ) {
+             for ( j = i; j < peers->number-1; j++) {
+                peers->peer[j] = peers->peer[j+1];
+             }
+             break;
+        }
+    }
+
+    peers->number -= 1;
+    ngx_pfree(ngx_cycle->pool,&(peers->peer[peers->number]));
+
+    return 1;
+
+}
+
+
+/*
+ * the function is remove server from back-end peers. if 
+ * the server is not find and return error and notes the 
+ * server is not find. now suitable for round_robin or
+ * ip_hash and consistent_hash
+*/
+static int
+ngx_http_lua_upstream_remove_peer(lua_State * L)
+{
+# if (NGX_HTTP_UPSTREAM_CONSISTENT_HASH)
+    ngx_str_t   host;
+    ngx_int_t   j,weight;
+    ngx_http_request_t *r;
+    ngx_http_upstream_chash_srv_conf_t * ucscf;
+    ngx_http_upstream_chash_server_t * server;
+    ngx_http_upstream_rr_peers_t *peers;
+    ngx_http_upstream_rr_peer_t *peer;
+    ngx_http_upstream_srv_conf_t *uscf;
+    ngx_uint_t i,n,rnindex,sid,id;
+    ngx_uint_t hash_len,*nest;
+    u_char     hash_buf[256];
+    ngx_url_t u;
+    size_t old_size,new_size;
+#endif
+
+    if ( 1 != ngx_http_lua_upstream_simple_remove_peer(L) ) {
+           return 2;
+    }
+
+# if (NGX_HTTP_UPSTREAM_CONSISTENT_HASH)
+
+    r = ngx_http_lua_get_request(L);
+    if ( NULL == r ) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "get request error \n");
+        return 2;
+    }
+
+    host.data = (u_char *) luaL_checklstring(L, 1, &host.len);
+
+    ngx_memzero(&u, sizeof (ngx_url_t));
+    u.url.data = (u_char *) luaL_checklstring(L, 2, &u.url.len);
+    u.default_port = 80;
+
+
+#if (NGX_DEBUG)
+    ngx_log_error(NGX_LOG_ALERT, r->connection->log, 0, "%s %s params: %s\n", __FILE__,__FUNCTION__ , u.url.data );
+#endif
+
+    uscf = ngx_http_lua_upstream_find_upstream(L, &host);
+    if (NULL == uscf) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "upstream not found\n");
+        return 2;
+    }
+
+    peers = uscf->peer.data;
+    if ( NULL == peers ) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "the peers is null\n");
+        return 2;
+    }
+       
+    ucscf = ngx_http_conf_upstream_srv_conf(uscf,ngx_http_upstream_consistent_hash_module);
+    
+    
+    n = peers->number;
+    for (i = 0; i <= n; i++) {
+        ngx_pfree(ngx_cycle->pool,ucscf->real_node[i]);
+    }
+    
+    ngx_pfree(ngx_cycle->pool,ucscf->real_node);
+
+    ucscf->number = 0;
+    ucscf->real_node = ngx_pcalloc(ngx_cycle->pool, n * sizeof(ngx_http_upstream_chash_server_t**));
+    if (ucscf->real_node == NULL) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "real_node is prealloc is fail\n");
+        return 2;
+    }
+
+    for (i = 0; i < n; i++) {
+        ucscf->number += peers->peer[i].weight * NGX_CHASH_VIRTUAL_NODE_NUMBER;
+        ucscf->real_node[i] = ngx_pcalloc(ngx_cycle->pool,
+                                    (peers->peer[i].weight
+                                     * NGX_CHASH_VIRTUAL_NODE_NUMBER + 1) *
+                                     sizeof(ngx_http_upstream_chash_server_t*));
+        if (ucscf->real_node[i] == NULL) {
+            lua_pushnil(L);
+            lua_pushliteral(L, "real_node is pcalloc is fail\n");
+            return 2;
+        }
+    }
+
+    ngx_pfree(ngx_cycle->pool,ucscf->servers);
+    ucscf->servers = ngx_pcalloc(ngx_cycle->pool,
+                                 (ucscf->number + 1) *
+                                  sizeof(ngx_http_upstream_chash_server_t));
+
+    if (ucscf->servers == NULL) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "servers is pcalloc is fail\n");
+        return 2;
+    }
+
+    ngx_pfree(ngx_cycle->pool,ucscf->d_servers);
+    ucscf->d_servers = ngx_pcalloc(ngx_cycle->pool,
+                                (ucscf->number + 1) *
+                                sizeof(ngx_http_upstream_chash_down_server_t));
+
+    if (ucscf->d_servers == NULL) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "d_servers is pcalloc is fail\n");
+        return 2;
+    }
+
+    ucscf->number = 0;
+    for (i = 0; i < n; i++) {
+
+        peer = &peers->peer[i];
+        sid = (ngx_uint_t) ngx_atoi(peer->id.data, peer->id.len);
+
+        if (sid == (ngx_uint_t) NGX_ERROR || sid > 65535) {
+
+#if (NGX_DEBUG)
+            ngx_log_error(NGX_LOG_ALERT, r->connection->log, 0, "server id  %d\n", sid );
+#endif
+
+            ngx_snprintf(hash_buf, 256, "%V%Z", &peer->name);
+            hash_len = ngx_strlen(hash_buf);
+            sid = ngx_murmur_hash2(hash_buf, hash_len);
+        }
+
+        weight = peer->weight * NGX_CHASH_VIRTUAL_NODE_NUMBER;
+
+        if (weight >= 1 << 14) {
+#if (NGX_DEBUG)
+        ngx_log_error(NGX_LOG_ALERT, r->connection->log, 0, "weigth[%d] is too large, is must be less than %d\n", weight / NGX_CHASH_VIRTUAL_NODE_NUMBER,(1 << 14) / NGX_CHASH_VIRTUAL_NODE_NUMBER );
+#endif
+            weight = 1 << 14;
+        }
+
+        for (j = 0; j < weight; j++) {
+            server = &ucscf->servers[++ucscf->number];
+            server->peer = peer;
+            server->rnindex = i;
+
+            id = sid * 256 * 16 + j;
+            server->hash = ngx_murmur_hash2((u_char *) (&id), 4);
+        }
+        
+    }
+
+    ngx_qsort(ucscf->servers + 1, ucscf->number,
+              sizeof(ngx_http_upstream_chash_server_t),
+              (const void *)ngx_http_upstream_chash_cmp);
+
+    nest = calloc(n+1 ,sizeof(ngx_uint_t));
+    if (nest == NULL) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "nest is calloc is fail\n");
+        return 2;
+    }
+
+    for (i = 1; i <= ucscf->number; i++) {
+        ucscf->servers[i].index = i;
+        ucscf->d_servers[i].id = i;
+        rnindex = ucscf->servers[i].rnindex;
+        ucscf->real_node[rnindex][nest[rnindex]] = &ucscf->servers[i];
+        nest[rnindex]++;
+    }
+
+    ngx_free(nest);
+
+    
+    ucscf->tree->segments = ngx_prealloc(ngx_cycle->pool,ucscf->tree->segments,old_size,new_size);
+    if (NULL == ucscf->tree->segments) {
+        lua_pushnil(L);
+        lua_pushliteral(L,"ucscf tree segments realloc fail\n");
+
+    }
+
+    ucscf->tree->num = ucscf->number;
+    ucscf->tree->build(ucscf->tree, 1, 1, ucscf->number);
+
+    ngx_queue_init(&ucscf->down_servers);
+
+#endif
+
+    return 1;
+
+
+}
+
+
+
+/*
  * the function is check upstream whether there is  
  * such a u.url.data,if exist return srv_conf_t structure 
  * else return NULL
@@ -250,7 +622,6 @@ ngx_http_lua_upstream_add_server(lua_State * L)
 static ngx_http_upstream_srv_conf_t *
 ngx_http_lua_upstream_check_peers(lua_State * L,ngx_url_t u,ngx_http_upstream_server_t ** srv)
 {
-    
     ngx_uint_t i;
     ngx_http_upstream_srv_conf_t **uscfp;
     ngx_http_upstream_main_conf_t *umcf;
@@ -375,6 +746,68 @@ ngx_http_lua_upstream_add_check_peer(ngx_http_upstream_srv_conf_t *us ,
     return peer->index;
 
 }
+
+
+/*
+ * the function is remove a peer to upstream check
+ * module
+*/
+ngx_uint_t 
+ngx_http_lua_upstream_remove_check_peer(ngx_http_upstream_srv_conf_t *us , 
+                                          ngx_url_t u)
+{
+    ngx_http_upstream_check_peer_t *cpeer,*peer;
+    ngx_http_upstream_check_peers_t *peers;
+    ngx_http_upstream_check_srv_conf_t *ucscf;
+    ngx_http_upstream_check_main_conf_t *ucmcf;
+
+    
+   if (us->srv_conf == NULL) {
+        return 0;
+    }
+
+    ucscf = ngx_http_conf_upstream_srv_conf(us, ngx_http_upstream_check_module);
+
+    if(ucscf->check_interval == 0) {
+        return 0;
+    }
+
+    ucmcf = ngx_http_cycle_get_module_main_conf(ngx_cycle,ngx_http_upstream_check_module);
+    peers = ucmcf->peers;
+
+
+    peer = peers->peers.elts;
+
+    servers = ngx_array_create(ngx_cycle->pool,peers->peers.nelts,
+                                               sizeof(ngx_http_upstream_check_peer_t));    
+    if (NULL == servers) {
+        //lua_pushnil(L);
+        //lua_pushliteral(L, "servers create fail\n");
+        return 0;
+    }
+    
+    for (i = 0; i < peers->peers.nelts; i++) {
+        len = ( peers->peers[i].host.data == NULL ? 0 : ngx_strlen(peers->peers[i].host.data));
+	if ( len == u.url.len
+               && ngx_memcmp( u.url.data ,peers->peers[i].host.data , u.url.len) == 0 ) {
+             continue;
+        }
+
+        cpeer = ngx_array_push(servers);
+        ngx_memzero(cpeer,sizeof(ngx_http_upstream_check_peer_t));
+        cpeer->index = i;
+        cpeer->conf = ucscf;
+        cpeer->upstream_name = peer[i].upstream_name;
+        cpeer->peer_addr = peer[i].peer_addr;
+   }
+   
+   ngx_array_destroy(ucmcf->peers);
+   ucmcf->peers = servers;
+
+   return 1;
+
+}
+
 
 #endif
 
