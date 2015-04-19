@@ -17,6 +17,8 @@ Table of Contents
     * [set_peer_down](#set_peer_down)
     * [add_server](#add_server)
     * [add_peer](#add_peer)
+    * [remove_server](#remove_server)
+    * [remove_peer](#remove_peer)
 * [TODO](#todo)
 * [Compatibility](#compatibility)
 * [Installation](#installation)
@@ -218,7 +220,7 @@ add_server
 
 add_peer
 -----------
-`syntax: ok,err = upstream.add_peer(ip:port)`
+`syntax: ok,err = upstream.add_peer(upstream,ip:port)`
 
  Add a server to back-end peers. if back-end peers is exist will return err and notes the peer is exist. 
  it's suitable for ip_hash or round_robin and consistent_hash.    
@@ -247,6 +249,48 @@ add_peer
  ```  
 
 [Back to TOC](#table-of-contents)       
+
+remove_server
+-----------
+`syntax: ok,err = upstream.remove_server(upstream,ip:port)`
+
+ Remove a server from upstream. if the server is not exist will return err and notes the server is not found.     
+ Warning:         
+ `it also to add server to ngx_http_upstream_server_t structure ,so you should call add_peer.   
+
+
+[Back to TOC](#table-of-contents)       
+
+remove_peer
+-----------
+`syntax: ok,err = upstream.remove_peer(upstream,ip:port)`
+
+ Remove a server to back-end peers. if back-end peers not exist will return err and notes the peer is not found. 
+ it's suitable for ip_hash or round_robin and consistent_hash.    
+ Warning:      
+ `if you are using a consistent_hash and you should change nginx directory auto/modules to below`     
+
+ ```nginx
+ if [ $HTTP_UPSTREAM_CONSISTENT_HASH = YES ]; then
+     HTTP_MODULES="$HTTP_MODULES $HTTP_UPSTREAM_CONSISTENT_HASH_MODULE"
+     HTTP_SRCS="$HTTP_SRCS $HTTP_UPSTREAM_CONSISTENT_HASH_SRCS"
+ fi
+ ```
+
+ To
+
+ ```nginx
+ if [ $HTTP_UPSTREAM_CONSISTENT_HASH = YES ]; then
+     have=NGX_HTTP_UPSTREAM_CONSISTENT_HASH . auto/have
+     HTTP_MODULES="$HTTP_MODULES $HTTP_UPSTREAM_CONSISTENT_HASH_MODULE"
+     HTTP_SRCS="$HTTP_SRCS $HTTP_UPSTREAM_CONSISTENT_HASH_SRCS"
+ fi
+
+ ```  
+
+[Back to TOC](#table-of-contents)       
+
+
 
 
 TODO
